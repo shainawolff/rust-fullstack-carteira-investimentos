@@ -30,6 +30,10 @@ async fn create_asset(
     repostiory: Repository,
     Json(request): Json<CreateAssetRequest>,
 ) -> Result<Json<Asset>, AppError> {
+    if request.unit_value <= 0.0 {
+        return Err(AppError::InvalidAssetValue);
+    }
+
     let new_asset = repostiory
         .create_asset(request.name, request.unit_value)
         .await?;
@@ -50,6 +54,11 @@ async fn update_asset(
     repostiory: Repository,
     Json(request): Json<UpdateAssetRequest>,
 ) -> Result<Json<Asset>, AppError> {
+    if let Some(unit_value) = request.unit_value {
+        if unit_value <= 0.0 {
+            return Err(AppError::InvalidAssetValue);
+        }
+    }
     match repostiory
         .update_asset(request.id, request.name, request.unit_value)
         .await?
@@ -109,5 +118,30 @@ mod tests {
         assert_eq!(updated_asset.unit_value, 20.0);
 
         insta::assert_json_snapshot!(updated_asset);
+    }
+    
+    #[sqlx::test]
+    async fn test_create_asset_invalid_value(db: PgPool) {
+        let request = CreateAssetRequest {
+            name: "Bitcoin".to_string(),
+            unit_value: 0.0,
+        };
+
+        let result = create_asset(Admin, db.into(), Json(request)).await;
+
+        assert!(matches!(result, Err(AppError::InvalidAssetValue)));
+    }
+
+    #[sqlx::test(fixtures("bitcoin_asset"))]
+    async fn test_update_asset_invalid_value(db: PgPool) {
+        let request = UpdateAssetRequest {
+            id: 1,
+            name: None,
+            unit_value: Some(-10.0),
+        };
+
+        let result = update_asset(Admin, db.into(), Json(request)).await;
+
+        assert!(matches!(result, Err(AppError::InvalidAssetValue)));
     }
 }
